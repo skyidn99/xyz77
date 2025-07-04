@@ -59,7 +59,7 @@ def format_status_message(result: dict, domain_to_check: str) -> str:
     ip = result.get("ip", "N/A")
     domain = result.get("domain", domain_to_check)
     emoji = "🔴" if status == "BLOCKED" else "✅"
-    status_text = "is *BLOCKED*" if status == "BLOCKED" else "is *AMAN*"
+    status_text = "is *BLOCKED*" if status == "BLOCKED" else "is *OK*"
     return f"{emoji} `https://{domain}` {status_text} (IP: `{ip}`)"
 
 def get_domains_from_message(text: str) -> list[str]:
