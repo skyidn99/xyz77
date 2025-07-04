@@ -68,11 +68,11 @@ def format_status_message(result: dict, domain_to_check: str) -> str:
     if status == "BLOCKED":
         emoji = "❌"
         status_text = "Blocked"
-    else:  # "OK" atau status lain dianggap "Not Blocked"
+    else:  # "OK" atau status lain dianggap "OK"
         emoji = "✅"
-        status_text = "Not Blocked"
+        status_text = "OK"
         
-    # Gabungkan menjadi format baru: https://domain.com/: ✅ Not Blocked
+    # Gabungkan menjadi format baru: https://domain.com/: ✅ OK
     return f"{full_url}: {emoji} {status_text}"
 
 def get_domains_from_message(text: str) -> list[str]:
