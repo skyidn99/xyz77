@@ -20,7 +20,7 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# --- Data, API, and Formatting Functions (No changes) ---
+# --- Data, API, and Formatting Functions ---
 def load_data() -> dict:
     if not DATA_FILE.exists(): return {"chat_id": None, "domains": []}
     try:
@@ -53,21 +53,33 @@ async def check_domain_status(domain: str) -> dict:
         try: return response.json()
         except: return {"error": str(e)}
 
+# --- PERUBAHAN 1: Menambahkan garis miring (/) di akhir domain ---
 def format_status_message(result: dict, domain_to_check: str) -> str:
-    if "error" in result: return f"❌ **Error checking `{domain_to_check}`:**\n{result['error']}"
+    """Formats the API result into a user-friendly string."""
+    if "error" in result:
+        return f"❌ **Error checking `{domain_to_check}`:**\n{result['error']}"
+    
     status = result.get("status", "unknown").upper()
     ip = result.get("ip", "N/A")
     domain = result.get("domain", domain_to_check)
     emoji = "🔴" if status == "BLOCKED" else "✅"
     status_text = "is *BLOCKED*" if status == "BLOCKED" else "is *OK*"
-    return f"{emoji} `https://{domain}` {status_text} (IP: `{ip}`)"
+    
+    # Tambahkan "https://", domain, dan "/" di sini
+    return f"{emoji} `https://{domain}/` {status_text} (IP: `{ip}`)"
 
 def get_domains_from_message(text: str) -> list[str]:
     parts = text.split(maxsplit=1)
     if len(parts) < 2: return []
-    return parts[1].split()
+    raw_domains = parts[1].split()
+    # Logika ini memastikan data yang disimpan selalu bersih (tanpa http dan /)
+    cleaned_domains = [
+        d.lower().replace("https://", "").replace("http://", "").strip("/")
+        for d in raw_domains if d.strip()
+    ]
+    return cleaned_domains
 
-# --- Job/Check Function (No changes, but we will call this manually now) ---
+# --- Job/Check Function (No changes needed here) ---
 async def periodic_check(context: ContextTypes.DEFAULT_TYPE) -> None:
     """The core function that checks all domains and sends a report."""
     logger.info("Running domain check...")
@@ -83,21 +95,19 @@ async def periodic_check(context: ContextTypes.DEFAULT_TYPE) -> None:
     report_lines = ["🔔 **Domain Status Report**\n"]
     for domain in domains:
         result = await check_domain_status(domain)
+        # Fungsi format_status_message yang sudah diubah akan dipanggil di sini
         report_lines.append(format_status_message(result, domain))
-        await asyncio.sleep(1) # Small delay to avoid hammering the API
+        await asyncio.sleep(1) 
     await context.bot.send_message(chat_id=chat_id, text="\n".join(report_lines), parse_mode='Markdown')
     logger.info("Domain check finished and report sent.")
 
 
 # --- Command Handlers ---
 
-# --- CHANGE 1: ADD THE NEW /checknow COMMAND HANDLER ---
 async def check_now_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manually triggers a check of all domains on the watchlist."""
     await update.message.reply_text(
         "🔍 On-demand check initiated. I will now check all domains on the watchlist..."
     )
-    # We can directly call the existing periodic_check function! It's that simple.
     await periodic_check(context)
 
 
@@ -106,7 +116,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     data["chat_id"] = update.effective_chat.id
     save_data(data)
     
-    # --- CHANGE 2: UPDATE THE WELCOME MESSAGE WITH THE NEW COMMAND ---
     welcome_text = (
         "👋 **Hello, everyone! The Indiwtf Domain Checker is now active in this group.**\n\n"
         "I will send periodic domain reports to this chat. Any member can manage the watchlist.\n\n"
@@ -131,7 +140,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     data = load_data()
     current_domains = set(data.get("domains", []))
-    domains_to_add = {domain.lower() for domain in domains_to_process}
+    domains_to_add = set(domains_to_process)
     newly_added = sorted(list(domains_to_add - current_domains))
     already_exist = sorted(list(domains_to_add & current_domains))
     response_parts = ["**📝 Bulk Add Report**\n"]
@@ -150,7 +159,7 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     data = load_data()
     current_domains = set(data.get("domains", []))
-    domains_to_remove = {domain.lower() for domain in domains_to_process}
+    domains_to_remove = set(domains_to_process)
     successfully_removed = sorted(list(domains_to_remove & current_domains))
     not_found = sorted(list(domains_to_remove - current_domains))
     response_parts = ["**🗑️ Bulk Remove Report**\n"]
@@ -162,21 +171,26 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         response_parts.append(f"❓ Could not remove *{len(not_found)}* domains (not on list).")
     await update.message.reply_text("\n".join(response_parts), parse_mode='Markdown')
 
+# --- PERUBAHAN 2: Menambahkan garis miring (/) di akhir domain pada /list ---
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     domains = load_data().get("domains", [])
     if not domains:
         await update.message.reply_text("The watchlist is empty. Use `/add domain.com`.")
         return
-    message = "📋 **Current Watchlist:**\n```\n" + "\n".join(f"- {d}" for d in domains) + "\n```"
+    # Tampilkan domain dengan https:// dan / agar konsisten
+    message_domains = [f"- https://{d}/" for d in domains]
+    message = "📋 **Current Watchlist:**\n```\n" + "\n".join(message_domains) + "\n```"
     await update.message.reply_text(message, parse_mode='Markdown')
 
+# --- PERUBAHAN 3: Menambahkan garis miring (/) di akhir domain pada /check ---
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     domains_to_check = get_domains_from_message(update.message.text)
     if not domains_to_check:
         await update.message.reply_text("Usage: `/check domain.com`")
         return
-    domain_to_check = domains_to_check[0].lower()
-    await update.message.reply_text(f"🔍 Checking `{domain_to_check}`...", parse_mode='Markdown')
+    domain_to_check = domains_to_check[0]
+    # Ubah pesan "Checking" agar konsisten
+    await update.message.reply_text(f"🔍 Checking `https://{domain_to_check}/`...", parse_mode='Markdown')
     result = await check_domain_status(domain_to_check)
     await update.message.reply_text(format_status_message(result, domain_to_check), parse_mode='Markdown')
 
@@ -195,15 +209,13 @@ def main() -> None:
         .build()
     )
 
-    # --- CHANGE 3: REGISTER THE NEW COMMAND HANDLER ---
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("add", add_command))
     application.add_handler(CommandHandler("remove", remove_command))
     application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("check", check_command))
-    application.add_handler(CommandHandler("checknow", check_now_command)) # Add this line
+    application.add_handler(CommandHandler("checknow", check_now_command))
     
-    # Schedule the job
     application.job_queue.run_repeating(periodic_check, interval=PERIODIC_CHECK_INTERVAL, first=10)
 
     logger.info("Bot is starting up...")
