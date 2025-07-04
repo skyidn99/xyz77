@@ -53,33 +53,40 @@ async def check_domain_status(domain: str) -> dict:
         try: return response.json()
         except: return {"error": str(e)}
 
-# --- PERUBAHAN 1: Menambahkan garis miring (/) di akhir domain ---
+# --- PERUBAHAN 1: Mengubah total format pesan status sesuai gambar kedua ---
 def format_status_message(result: dict, domain_to_check: str) -> str:
-    """Formats the API result into a user-friendly string."""
+    """Formats the API result to match the new desired format."""
     if "error" in result:
-        return f"❌ **Error checking `{domain_to_check}`:**\n{result['error']}"
+        return f"❌ Error checking {domain_to_check}: {result['error']}"
     
     status = result.get("status", "unknown").upper()
-    ip = result.get("ip", "N/A")
     domain = result.get("domain", domain_to_check)
-    emoji = "🔴" if status == "BLOCKED" else "✅"
-    status_text = "is *BLOCKED*" if status == "BLOCKED" else "is *OK*"
     
-    # Tambahkan "https://", domain, dan "/" di sini
-    return f"{emoji} `https://{domain}/` {status_text} (IP: `{ip}`)"
+    # Buat URL lengkap yang akan otomatis menjadi link oleh Telegram
+    full_url = f"https://{domain}/"
+
+    if status == "BLOCKED":
+        emoji = "❌"
+        status_text = "Blocked"
+    else:  # "OK" atau status lain dianggap "Not Blocked"
+        emoji = "✅"
+        status_text = "Not Blocked"
+        
+    # Gabungkan menjadi format baru: https://domain.com/: ✅ Not Blocked
+    return f"{full_url}: {emoji} {status_text}"
 
 def get_domains_from_message(text: str) -> list[str]:
     parts = text.split(maxsplit=1)
     if len(parts) < 2: return []
     raw_domains = parts[1].split()
-    # Logika ini memastikan data yang disimpan selalu bersih (tanpa http dan /)
     cleaned_domains = [
         d.lower().replace("https://", "").replace("http://", "").strip("/")
         for d in raw_domains if d.strip()
     ]
     return cleaned_domains
 
-# --- Job/Check Function (No changes needed here) ---
+# --- Job/Check Function ---
+# --- PERUBAHAN 2: Mengubah header laporan dan menghapus parse_mode ---
 async def periodic_check(context: ContextTypes.DEFAULT_TYPE) -> None:
     """The core function that checks all domains and sends a report."""
     logger.info("Running domain check...")
@@ -92,21 +99,23 @@ async def periodic_check(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.send_message(chat_id=chat_id, text="Watchlist is empty. Add domains with `/add`.")
         return
 
-    report_lines = ["🔔 **Domain Status Report**\n"]
+    # Ganti header laporan
+    report_lines = ["Domain Check Results\n"]
     for domain in domains:
         result = await check_domain_status(domain)
-        # Fungsi format_status_message yang sudah diubah akan dipanggil di sini
         report_lines.append(format_status_message(result, domain))
-        await asyncio.sleep(1) 
-    await context.bot.send_message(chat_id=chat_id, text="\n".join(report_lines), parse_mode='Markdown')
+        await asyncio.sleep(1)
+        
+    # Kirim pesan tanpa parse_mode, Telegram akan menangani link secara otomatis
+    await context.bot.send_message(chat_id=chat_id, text="\n".join(report_lines))
     logger.info("Domain check finished and report sent.")
 
 
-# --- Command Handlers ---
+# --- Command Handlers (dengan sedikit penyesuaian gaya) ---
 
 async def check_now_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "🔍 On-demand check initiated. I will now check all domains on the watchlist..."
+        "On-demand check initiated. I will now check all domains on the watchlist..."
     )
     await periodic_check(context)
 
@@ -117,82 +126,73 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     save_data(data)
     
     welcome_text = (
-        "👋 **Hello, everyone! The Indiwtf Domain Checker is now active in this group.**\n\n"
-        "I will send periodic domain reports to this chat. Any member can manage the watchlist.\n\n"
+        "Hello! I am a domain status checker.\n\n"
         "**Commands:**\n"
-        "`/add domain1.com ...`\n"
-        "Adds one or more domains to the watchlist.\n\n"
-        "`/remove domain1.com ...`\n"
-        "Removes one or more domains.\n\n"
-        "`/list`\n"
-        "Shows all watched domains.\n\n"
-        "`/checknow`\n"
-        "Triggers an immediate check of all domains on the watchlist.\n\n"
-        "`/check domain.com`\n"
-        "Performs a single, one-time check for a specific domain."
+        "`/add domain1.com ...` - Add domains to watchlist.\n"
+        "`/remove domain1.com ...` - Remove domains.\n"
+        "`/list` - Show all watched domains.\n"
+        "`/checknow` - Trigger an immediate check.\n"
+        "`/check domain.com` - Perform a single check."
     )
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     domains_to_process = get_domains_from_message(update.message.text)
     if not domains_to_process:
-        await update.message.reply_text("Usage: `/add domain1.com ...`\nYou can also paste a list of domains on new lines after the command.")
+        await update.message.reply_text("Usage: /add domain1.com domain2.com")
         return
     data = load_data()
     current_domains = set(data.get("domains", []))
     domains_to_add = set(domains_to_process)
     newly_added = sorted(list(domains_to_add - current_domains))
     already_exist = sorted(list(domains_to_add & current_domains))
-    response_parts = ["**📝 Bulk Add Report**\n"]
+    response_parts = ["Bulk Add Report\n"]
     if newly_added:
         data["domains"].extend(newly_added)
         save_data(data)
-        response_parts.append(f"✅ Added *{len(newly_added)}* new domains.")
+        response_parts.append(f"✅ Added {len(newly_added)} new domains.")
     if already_exist:
-        response_parts.append(f"☑️ Skipped *{len(already_exist)}* domains (already on list).")
-    await update.message.reply_text("\n".join(response_parts), parse_mode='Markdown')
+        response_parts.append(f"☑️ Skipped {len(already_exist)} domains (already on list).")
+    await update.message.reply_text("\n".join(response_parts))
 
 async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     domains_to_process = get_domains_from_message(update.message.text)
     if not domains_to_process:
-        await update.message.reply_text("Usage: `/remove domain1.com ...`\nYou can also paste a list of domains on new lines after the command.")
+        await update.message.reply_text("Usage: /remove domain1.com domain2.com")
         return
     data = load_data()
     current_domains = set(data.get("domains", []))
     domains_to_remove = set(domains_to_process)
     successfully_removed = sorted(list(domains_to_remove & current_domains))
     not_found = sorted(list(domains_to_remove - current_domains))
-    response_parts = ["**🗑️ Bulk Remove Report**\n"]
+    response_parts = ["Bulk Remove Report\n"]
     if successfully_removed:
         data["domains"] = [d for d in data["domains"] if d not in successfully_removed]
         save_data(data)
-        response_parts.append(f"✅ Removed *{len(successfully_removed)}* domains.")
+        response_parts.append(f"✅ Removed {len(successfully_removed)} domains.")
     if not_found:
-        response_parts.append(f"❓ Could not remove *{len(not_found)}* domains (not on list).")
-    await update.message.reply_text("\n".join(response_parts), parse_mode='Markdown')
+        response_parts.append(f"❓ Could not remove {len(not_found)} domains (not on list).")
+    await update.message.reply_text("\n".join(response_parts))
 
-# --- PERUBAHAN 2: Menambahkan garis miring (/) di akhir domain pada /list ---
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     domains = load_data().get("domains", [])
     if not domains:
         await update.message.reply_text("The watchlist is empty. Use `/add domain.com`.")
         return
-    # Tampilkan domain dengan https:// dan / agar konsisten
-    message_domains = [f"- https://{d}/" for d in domains]
-    message = "📋 **Current Watchlist:**\n```\n" + "\n".join(message_domains) + "\n```"
-    await update.message.reply_text(message, parse_mode='Markdown')
+    # Tampilkan daftar sebagai list URL sederhana
+    message_domains = [f"https://{d}/" for d in domains]
+    message = "📋 Current Watchlist:\n" + "\n".join(message_domains)
+    await update.message.reply_text(message)
 
-# --- PERUBAHAN 3: Menambahkan garis miring (/) di akhir domain pada /check ---
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     domains_to_check = get_domains_from_message(update.message.text)
     if not domains_to_check:
-        await update.message.reply_text("Usage: `/check domain.com`")
+        await update.message.reply_text("Usage: /check domain.com")
         return
     domain_to_check = domains_to_check[0]
-    # Ubah pesan "Checking" agar konsisten
-    await update.message.reply_text(f"🔍 Checking `https://{domain_to_check}/`...", parse_mode='Markdown')
+    await update.message.reply_text(f"🔍 Checking {domain_to_check}...")
     result = await check_domain_status(domain_to_check)
-    await update.message.reply_text(format_status_message(result, domain_to_check), parse_mode='Markdown')
+    await update.message.reply_text(format_status_message(result, domain_to_check))
 
 
 def main() -> None:
