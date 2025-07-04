@@ -1,5 +1,0 @@
-// go.sum
-github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1 h1:135+h2y1y54w2s/tTby9t5A3lAs1V1gH2d9n_Otk6cI=
-github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1/go.mod h1:1V+flIHB1PZJ5DX2D4w0s5n1sILq3pQJBB9BeXm81js=
-github.com/robfig/cron/v3 v3.0.1 h1:pI4A7eNlH4S2crftQYNf4W4iOaUv22e41jDkHhBGXcs=
-github.com/robfig/cron/v3 v3.0.1/go.mod h1:pKBwCBGkL4V/zAsv06jD2zpjht5hDah5j2SBEJdGfKM=
